@@ -1,0 +1,27 @@
+services:
+  patients-service:
+    build: .
+    container_name: patients_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://healthcare:healthcare_dev@postgres:5432/patients
+      KAFKA_BOOTSTRAP: kafka:9092
+      SERVICE_HOST_MODE: docker
+      PORT_IDENTITY_SERVICE: "8001"
+      PORT_AUTH_SERVICE: "8002"
+      PORT_AUDIT_LOG_SERVICE: "8007"
+      PORT_NOTIFICATIONS_SERVICE: "9000"
+      LOG_LEVEL: INFO
+    ports:
+      - "8100:8100"
+    networks:
+      - healthcare_net
+    volumes:
+      - ../../libs/py-healthcare-common:/opt/py-healthcare-common:ro
+    # Install the sibling lib editable, then hand off to the CMD from the Dockerfile.
+    command: >
+      sh -c "pip install -e /opt/py-healthcare-common && python -m app.main"

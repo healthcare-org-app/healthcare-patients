@@ -1,0 +1,20 @@
+name: patients-service
+port: 8100
+lang: python
+description: |
+  System of record for patient demographics, identifiers, and consent-linked
+  attributes. Every downstream clinical, billing, and comms flow starts here.
+
+http_deps:
+  - identity-service
+  - auth-service
+  - audit-log-service
+  - notifications-service
+
+publishes:
+  - patient.created
+  - patient.updated
+  - audit.event
+
+subscribes:
+  - identity.user.created
