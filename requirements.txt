@@ -5,3 +5,7 @@ requests>=2.31.0
 PyJWT>=2.8.0
 pyyaml>=6.0.1
 # Local dependency: install with `pip install -e ../../libs/py-healthcare-common`
+
+# Shared runtime library (installed from GitHub for Render/prod builds;
+# in local docker-compose dev this is superseded by the bind-mount).
+healthcare-common @ git+https://github.com/healthcare-org-app/healthcare-common.git@main

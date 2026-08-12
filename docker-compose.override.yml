@@ -8,6 +8,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      AUTH_DISABLED: "1"
       DATABASE_URL: postgresql://healthcare:healthcare_dev@postgres:5432/patients
       KAFKA_BOOTSTRAP: kafka:9092
       SERVICE_HOST_MODE: docker
