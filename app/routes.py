@@ -109,6 +109,26 @@ def build_blueprint(svc) -> Blueprint:
         except ServiceUnavailable:
             pass
 
+    def _filter_text(payload: dict) -> None:
+        """Best-effort: filter profanity out of first_name/last_name via
+        demographics-service if present.
+
+        Never blocks the create/update — a slow or down demographics-service
+        must not fail a patient write, same rationale as _validate_address.
+        """
+        demo = clients.get("demographics-service")
+        if not demo:
+            return
+        for field in ("first_name", "last_name"):
+            value = payload.get(field)
+            if not value:
+                continue
+            try:
+                result = json_or_raise(demo.post("/api/demographics/filter-text", json={"text": value}))
+                payload[field] = result.get("filtered", value)
+            except ServiceUnavailable:
+                pass
+
     @bp.post("/")
     @require_auth(scopes=["patients.write"])
     def create_patient():
@@ -118,6 +138,7 @@ def build_blueprint(svc) -> Blueprint:
             return jsonify({"error": f"missing fields: {', '.join(missing)}"}), 400
 
         _validate_address(payload)
+        _filter_text(payload)
         mrn = payload.pop("mrn", None)
         identity_sub = payload.pop("identity_sub", None)
         row = db.query_one(
@@ -171,6 +192,7 @@ def build_blueprint(svc) -> Blueprint:
         payload = request.get_json(silent=True) or {}
         payload.pop("id", None)
         _validate_address(payload)
+        _filter_text(payload)
         new_status = payload.pop("status", existing["status"])
         new_mrn = payload.pop("mrn", existing["mrn"])
         merged = {**(existing["data"] or {}), **payload}
