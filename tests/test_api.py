@@ -1,3 +1,71 @@
+class _FakeResponse:
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self._body = body
+        self.text = str(body)
+
+    def json(self):
+        return self._body
+
+
+class _FakeDemographicsClient:
+    def __init__(self, response):
+        self._response = response
+        self.calls = []
+
+    def post(self, path, json=None):
+        self.calls.append((path, json))
+        if isinstance(self._response, Exception):
+            raise self._response
+        return self._response
+
+
+def test_create_with_address_gets_geocoded(client, svc):
+    svc.clients["demographics-service"] = _FakeDemographicsClient(
+        _FakeResponse(200, {"valid": True, "matched_address": "1 Main St, Springfield, IL, 62701",
+                             "latitude": 39.8, "longitude": -89.6})
+    )
+    r = client.post("/api/patients/", json={
+        "first_name": "Addr", "last_name": "Test", "dob": "1990-01-01",
+        "address": "1 Main St", "city": "Springfield", "state": "IL", "zip": "62701",
+    })
+    assert r.status_code == 201, r.data
+    body = r.get_json()
+    assert body["address_validated"] is True
+    assert body["latitude"] == 39.8
+
+
+def test_create_with_unmatched_address_marks_invalid(client, svc):
+    svc.clients["demographics-service"] = _FakeDemographicsClient(
+        _FakeResponse(200, {"valid": False, "matched_address": None, "latitude": None, "longitude": None})
+    )
+    r = client.post("/api/patients/", json={
+        "first_name": "NoMatch", "last_name": "Test", "dob": "1990-01-01",
+        "address": "not a real place",
+    })
+    assert r.status_code == 201
+    assert r.get_json()["address_validated"] is False
+
+
+def test_create_without_address_skips_geocoding(client, svc):
+    demo = _FakeDemographicsClient(_FakeResponse(200, {"valid": True}))
+    svc.clients["demographics-service"] = demo
+    r = client.post("/api/patients/", json={"first_name": "A", "last_name": "B", "dob": "1990-01-01"})
+    assert r.status_code == 201
+    assert demo.calls == []
+
+
+def test_create_demographics_service_down_is_best_effort(client, svc):
+    from healthcare_common.http import ServiceUnavailable
+    svc.clients["demographics-service"] = _FakeDemographicsClient(ServiceUnavailable("down"))
+    r = client.post("/api/patients/", json={
+        "first_name": "Resilient", "last_name": "Test", "dob": "1990-01-01",
+        "address": "1 Main St",
+    })
+    assert r.status_code == 201
+    assert "address_validated" not in r.get_json()
+
+
 def test_create_then_read(client, svc):
     r = client.post("/api/patients/", json={
         "first_name": "Test", "last_name": "User", "dob": "1990-01-01",

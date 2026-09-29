@@ -84,6 +84,31 @@ def build_blueprint(svc) -> Blueprint:
 
     # ── create ───────────────────────────────────────────────────
 
+    def _validate_address(payload: dict) -> None:
+        """Best-effort: geocode `address` via demographics-service if present.
+
+        Never blocks the create/update — a slow or down demographics-service
+        must not fail a patient write, same rationale as the notifications
+        call below.
+        """
+        if not payload.get("address"):
+            return
+        demo = clients.get("demographics-service")
+        if not demo:
+            return
+        try:
+            result = json_or_raise(demo.post("/api/demographics/validate-address", json={
+                "address": payload.get("address"),
+                "city": payload.get("city"),
+                "state": payload.get("state"),
+                "zip": payload.get("zip"),
+            }))
+            payload["address_validated"] = result["valid"]
+            payload["latitude"] = result.get("latitude")
+            payload["longitude"] = result.get("longitude")
+        except ServiceUnavailable:
+            pass
+
     @bp.post("/")
     @require_auth(scopes=["patients.write"])
     def create_patient():
@@ -92,6 +117,7 @@ def build_blueprint(svc) -> Blueprint:
         if missing:
             return jsonify({"error": f"missing fields: {', '.join(missing)}"}), 400
 
+        _validate_address(payload)
         mrn = payload.pop("mrn", None)
         identity_sub = payload.pop("identity_sub", None)
         row = db.query_one(
@@ -144,6 +170,7 @@ def build_blueprint(svc) -> Blueprint:
 
         payload = request.get_json(silent=True) or {}
         payload.pop("id", None)
+        _validate_address(payload)
         new_status = payload.pop("status", existing["status"])
         new_mrn = payload.pop("mrn", existing["mrn"])
         merged = {**(existing["data"] or {}), **payload}
