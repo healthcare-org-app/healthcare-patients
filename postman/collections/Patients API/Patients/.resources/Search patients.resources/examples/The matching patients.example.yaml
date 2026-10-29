@@ -38,6 +38,7 @@ response:
           {
             "id": 1001,
             "mrn": "MRN-000123",
+            "medical_record_number": "MRN-000123",
             "identity_sub": null,
             "status": "active",
             "created_at": "2026-08-12T09:14:22.481930+00:00",
