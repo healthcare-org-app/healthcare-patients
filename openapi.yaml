@@ -625,11 +625,12 @@ components:
       type: object
       description: |
         A patient record. The envelope fields are always present and
-        server-managed (`medical_record_number` and `identity_sub` may be `null`); everything else
-        is the caller's `data` document, flattened to the top level. Additional
-        properties are therefore expected, not an error.
+        server-managed (`mrn`, `medical_record_number` and `identity_sub` may be `null`);
+        everything else is the caller's `data` document, flattened to the top
+        level. Additional properties are therefore expected, not an error.
       required:
         - id
+        - mrn
         - medical_record_number
         - identity_sub
         - status
@@ -641,6 +642,15 @@ components:
           format: int64
           readOnly: true
           description: Server-assigned primary key.
+        mrn:
+          type:
+            - string
+            - 'null'
+          deprecated: true
+          description: |
+            Deprecated: use `medical_record_number`. Same value, kept so existing
+            consumers keep working.
+          example: MRN-000123
         medical_record_number:
           type:
             - string
@@ -700,6 +710,7 @@ components:
       additionalProperties: true
       example:
         id: 1001
+        mrn: MRN-000123
         medical_record_number: MRN-000123
         identity_sub: null
         status: active
@@ -804,6 +815,7 @@ components:
         count: 1
         items:
           - id: 1001
+            mrn: MRN-000123
             medical_record_number: MRN-000123
             identity_sub: null
             status: active
@@ -832,6 +844,7 @@ components:
         count: 1
         items:
           - id: 1001
+            mrn: MRN-000123
             medical_record_number: MRN-000123
             identity_sub: null
             status: active
@@ -870,6 +883,7 @@ components:
       example:
         patient:
           id: 1001
+          mrn: MRN-000123
           medical_record_number: MRN-000123
           identity_sub: null
           status: active

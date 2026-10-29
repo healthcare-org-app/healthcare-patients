@@ -150,3 +150,19 @@ def test_search(client):
 def test_search_empty_q(client):
     r = client.get("/api/patients/search?q=")
     assert r.get_json() == {"count": 0, "items": []}
+
+
+def test_responses_carry_mrn_and_medical_record_number(client):
+    r = client.post("/api/patients/", json={
+        "first_name": "Ada", "last_name": "Lovelace", "dob": "1990-01-01", "mrn": "MRN-000123",
+    })
+    assert r.status_code == 201, r.data
+    created = r.get_json()
+    assert created["mrn"] == "MRN-000123"
+    assert created["medical_record_number"] == created["mrn"]
+
+    got = client.get(f"/api/patients/{created['id']}").get_json()
+    assert got["medical_record_number"] == got["mrn"] == "MRN-000123"
+
+    listed = client.get("/api/patients/").get_json()["items"][0]
+    assert listed["medical_record_number"] == listed["mrn"]
