@@ -641,7 +641,7 @@ components:
           format: int64
           readOnly: true
           description: Server-assigned primary key.
-        mrn:
+        medical_record_number:
           type:
             - string
             - 'null'
