@@ -46,14 +46,13 @@ Instantiated lazily via `svc.clients[...]`:
 - `auth-service` — token verification (via `require_auth` decorator; not a direct client)
 - `audit-log-service` — audit read (`/api/patients/<id>/audit-trail`)
 - `notifications-service` — welcome message on create
+- `demographics-service` — address validation and name filtering on create/update (best-effort)
+- `appointments-service`, `ehr-service`, `eligibility-service` — read by `/api/patients/<id>/summary` (best-effort)
 
 ## Local dev
 
 ```bash
-# One-time: install the shared lib editable
-pip install -e ../../libs/py-healthcare-common
-
-# Deps
+# Deps (the shared lib is pinned to a commit in requirements.txt)
 pip install -r requirements.txt
 
 # Bring up infra
@@ -74,6 +73,17 @@ Then:
 ```bash
 curl -H "Authorization: Bearer any" http://localhost:8100/api/patients/
 ```
+
+## Contract and quality gate
+
+The API contract is `openapi.yaml` (single source of truth) and the Postman collection is `postman/collections/Patients API/`.
+CI runs the platform API quality gate (`.github/workflows/quality-gate.yml`, config `quality-gate.yml`). Locally:
+
+```bash
+npx github:healthcare-org-app/healthcare-api-quality-gate#v1 run   # report in gate-results/report.md
+```
+
+See `CLAUDE.md` for the change loop.
 
 ## Tests
 

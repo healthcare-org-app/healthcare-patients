@@ -1,0 +1,3 @@
+$kind: collection
+description: Unauthenticated liveness and readiness probes.
+order: 2000

@@ -1,0 +1,7 @@
+localResources:
+  specs:
+    - ../openapi.yaml
+  collections:
+    - ../postman/collections/Patients API
+workspace:
+  id: ''

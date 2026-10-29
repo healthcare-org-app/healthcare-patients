@@ -1,0 +1,22 @@
+$kind: http-request
+description: |
+  Always returns `200` if the process is up. Performs no dependency checks.
+url: '{{baseUrl}}/health'
+method: GET
+headers:
+- key: Accept
+  value: application/json
+settings: {}
+examples: ./.resources/Liveness probe.resources/examples
+order: 1000
+scripts:
+- type: afterResponse
+  code: |
+    function checkPatient(p) {
+      // Envelope fields are the contract consumers rely on; extra keys are expected.
+      pm.expect(p).to.include.all.keys("id", "mrn", "identity_sub", "status", "created_at", "updated_at");
+      pm.expect(p.id).to.be.a("number");
+      pm.expect(p.status).to.be.a("string");
+    }
+    pm.test("200 and ok", () => { pm.response.to.have.status(200); const b = pm.response.json(); pm.expect(b.status).to.eql("ok"); pm.expect(b.service).to.be.a("string"); });
+  language: text/javascript
