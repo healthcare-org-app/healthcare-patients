@@ -150,3 +150,50 @@ def test_search(client):
 def test_search_empty_q(client):
     r = client.get("/api/patients/search?q=")
     assert r.get_json() == {"count": 0, "items": []}
+
+
+def _new_patient(client, **extra):
+    r = client.post("/api/patients/", json={
+        "first_name": "Mrn", "last_name": "Test", "dob": "1990-01-01", **extra,
+    })
+    assert r.status_code == 201, r.data
+    return r.get_json()
+
+
+def test_create_with_medical_record_number_returns_both_fields(client):
+    body = _new_patient(client, medical_record_number="MRN-NEW-1")
+    assert body["medical_record_number"] == "MRN-NEW-1"
+    assert body["mrn"] == "MRN-NEW-1"
+
+
+def test_create_with_deprecated_mrn_still_works(client):
+    body = _new_patient(client, mrn="MRN-OLD-1")
+    assert body["medical_record_number"] == "MRN-OLD-1"
+    assert body["mrn"] == "MRN-OLD-1"
+
+
+def test_create_medical_record_number_wins_over_mrn(client):
+    body = _new_patient(client, medical_record_number="MRN-NEW-2", mrn="MRN-OLD-2")
+    assert body["medical_record_number"] == "MRN-NEW-2"
+    assert body["mrn"] == "MRN-NEW-2"
+
+
+def test_read_and_search_return_both_fields(client):
+    pid = _new_patient(client, medical_record_number="MRN-FIND-3")["id"]
+    got = client.get(f"/api/patients/{pid}").get_json()
+    assert got["medical_record_number"] == got["mrn"] == "MRN-FIND-3"
+    hit = client.get("/api/patients/search?q=MRN-FIND-3").get_json()["items"][0]
+    assert hit["medical_record_number"] == hit["mrn"] == "MRN-FIND-3"
+
+
+def test_update_accepts_both_fields(client):
+    pid = _new_patient(client)["id"]
+    r = client.patch(f"/api/patients/{pid}", json={"medical_record_number": "MRN-UP-4"})
+    assert r.get_json()["medical_record_number"] == r.get_json()["mrn"] == "MRN-UP-4"
+    r = client.patch(f"/api/patients/{pid}", json={"mrn": "MRN-UP-5"})
+    assert r.get_json()["medical_record_number"] == r.get_json()["mrn"] == "MRN-UP-5"
+    r = client.patch(f"/api/patients/{pid}", json={"medical_record_number": "MRN-UP-6", "mrn": "MRN-UP-7"})
+    assert r.get_json()["medical_record_number"] == r.get_json()["mrn"] == "MRN-UP-6"
+    # neither sent: unchanged
+    r = client.patch(f"/api/patients/{pid}", json={"phone": "+1-555-0000"})
+    assert r.get_json()["mrn"] == "MRN-UP-6"

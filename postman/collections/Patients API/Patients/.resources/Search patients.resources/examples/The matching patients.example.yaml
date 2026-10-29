@@ -37,6 +37,7 @@ response:
         "items": [
           {
             "id": 1001,
+            "medical_record_number": "MRN-000123",
             "mrn": "MRN-000123",
             "identity_sub": null,
             "status": "active",
