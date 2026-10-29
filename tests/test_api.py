@@ -107,6 +107,31 @@ def test_create_then_read(client, svc):
     assert r2.get_json()["email"] == "t@example.com"
 
 
+def test_mrn_and_medical_record_number_are_both_returned(client):
+    r = client.post("/api/patients/", json={
+        "first_name": "Test", "last_name": "User", "dob": "1990-01-01",
+        "medical_record_number": "MRN-777",
+    })
+    assert r.status_code == 201, r.data
+    body = r.get_json()
+    assert body["mrn"] == body["medical_record_number"] == "MRN-777"
+
+    got = client.get(f"/api/patients/{body['id']}").get_json()
+    assert got["mrn"] == got["medical_record_number"] == "MRN-777"
+
+    # the deprecated name is still accepted on create and update
+    legacy = client.post("/api/patients/", json={
+        "first_name": "Old", "last_name": "Client", "dob": "1990-01-01",
+        "mrn": "MRN-888",
+    }).get_json()
+    assert legacy["mrn"] == legacy["medical_record_number"] == "MRN-888"
+
+    upd = client.patch(f"/api/patients/{legacy['id']}", json={"mrn": "MRN-889"}).get_json()
+    assert upd["mrn"] == upd["medical_record_number"] == "MRN-889"
+    upd = client.patch(f"/api/patients/{legacy['id']}", json={"medical_record_number": "MRN-890"}).get_json()
+    assert upd["mrn"] == upd["medical_record_number"] == "MRN-890"
+
+
 def test_create_missing_fields(client):
     r = client.post("/api/patients/", json={"first_name": "Only"})
     assert r.status_code == 400

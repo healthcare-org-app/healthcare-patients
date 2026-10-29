@@ -625,11 +625,12 @@ components:
       type: object
       description: |
         A patient record. The envelope fields are always present and
-        server-managed (`medical_record_number` and `identity_sub` may be `null`); everything else
-        is the caller's `data` document, flattened to the top level. Additional
+        server-managed (`mrn`, `medical_record_number` and `identity_sub` may be `null`);
+        everything else is the caller's `data` document, flattened to the top level. Additional
         properties are therefore expected, not an error.
       required:
         - id
+        - mrn
         - medical_record_number
         - identity_sub
         - status
@@ -641,6 +642,15 @@ components:
           format: int64
           readOnly: true
           description: Server-assigned primary key.
+        mrn:
+          type:
+            - string
+            - 'null'
+          deprecated: true
+          description: |
+            Deprecated, use `medical_record_number`. Always returned with the
+            same value, and still accepted on create and update.
+          example: MRN-000123
         medical_record_number:
           type:
             - string
@@ -700,6 +710,7 @@ components:
       additionalProperties: true
       example:
         id: 1001
+        mrn: MRN-000123
         medical_record_number: MRN-000123
         identity_sub: null
         status: active
@@ -731,6 +742,10 @@ components:
           description: Date of birth, conventionally `YYYY-MM-DD`.
         mrn:
           type: string
+          deprecated: true
+          description: Deprecated, use `medical_record_number`. Must be unique.
+        medical_record_number:
+          type: string
           description: Medical record number. Must be unique.
         identity_sub:
           type: string
@@ -753,7 +768,7 @@ components:
         first_name: Ada
         last_name: Lovelace
         dob: '1990-01-01'
-        mrn: MRN-000123
+        medical_record_number: MRN-000123
         email: ada@example.com
         phone: '+1-555-0100'
 
@@ -768,6 +783,10 @@ components:
           description: New envelope status. Omit to leave unchanged.
           example: active
         mrn:
+          type: string
+          deprecated: true
+          description: Deprecated, use `medical_record_number`. Omit to leave unchanged.
+        medical_record_number:
           type: string
           description: New medical record number. Omit to leave unchanged.
         email:
@@ -804,6 +823,7 @@ components:
         count: 1
         items:
           - id: 1001
+            mrn: MRN-000123
             medical_record_number: MRN-000123
             identity_sub: null
             status: active
@@ -832,6 +852,7 @@ components:
         count: 1
         items:
           - id: 1001
+            mrn: MRN-000123
             medical_record_number: MRN-000123
             identity_sub: null
             status: active
@@ -870,6 +891,7 @@ components:
       example:
         patient:
           id: 1001
+          mrn: MRN-000123
           medical_record_number: MRN-000123
           identity_sub: null
           status: active
