@@ -1,0 +1,967 @@
+openapi: 3.1.0
+
+info:
+  title: patients-service
+  version: 1.0.0
+  summary: "System of record for patient demographics, identifiers and contact details in the healthcare-org platform."
+  description: |
+    HTTP API for `patients-service` (domain: **patients**, port **8100**).
+
+    Every clinical, billing and communications flow starts by resolving a patient
+    here. Records are stored as a fixed envelope (`id`, `mrn`, `identity_sub`,
+    `status`, `created_at`, `updated_at`) around a free-form JSONB `data`
+    document. Responses flatten the two: envelope fields sit alongside the
+    caller-supplied `data` keys at the top level of the object. That is why
+    `Patient` allows additional properties.
+
+    ### Side effects
+    Every mutating endpoint publishes a domain event (`patient.created` on
+    create, `patient.updated` on update and deactivate), and *every* endpoint
+    under `/api/patients/` (reads included) publishes an `audit.event`. The
+    events are listed per operation below.
+
+    ### Best-effort peer calls
+    None of the peer calls below can fail a request: when the peer is down or
+    answers with an error, the call is skipped and the write goes through.
+
+    | Operation                 | Peer service             | What it does                                                                  |
+    |---------------------------|--------------------------|-------------------------------------------------------------------------------|
+    | create, update (`address`)| `demographics-service`   | Validates the address and adds `address_validated`, `latitude`, `longitude`.  |
+    | create, update            | `demographics-service`   | Filters profanity out of `first_name` and `last_name`.                        |
+    | create                    | `notifications-service`  | Sends a welcome notification.                                                 |
+
+    ### Summary fan-out
+    `GET /api/patients/{patient_id}/summary` reads `appointments-service`,
+    `ehr-service` and `eligibility-service`. Each peer section degrades to
+    `{"error": "..."}` instead of failing the request.
+
+    ### Soft delete
+    `DELETE` never removes a row: it sets `status` to `inactive`.
+
+    ### Consumers
+    Many services declare `patients-service` as an HTTP dependency (appointments,
+    ehr, billing, encounters, patient-portal-api, patient-search, and others).
+    Removing or renaming a field, a path or a response breaks them.
+
+servers:
+  - url: https://myhealthcare.dev
+    description: Production
+    x-fern-server-name: Production
+  - url: http://localhost:8100
+    description: Local development (host)
+    x-fern-server-name: Local
+  - url: http://patients-service:8100
+    description: Docker compose, on the `healthcare_net` network
+    x-fern-server-name: Docker
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Patients
+    description: CRUD, search and summary over patient records.
+  - name: Health
+    description: Unauthenticated liveness and readiness probes.
+
+paths:
+  /api/patients/:
+    get:
+      operationId: listPatients
+      summary: List patients
+      description: |
+        Returns a page of patients plus the total count matching the filter,
+        ordered by `id` ascending.
+
+        **Ad-hoc filtering.** `status` is an exact match on the envelope column.
+        Any query parameter named `data.<key>` is compiled to
+        `data->>'<key>' = '<value>'` (for example `data.city=Boston`); several
+        filters are ANDed. Any other query parameter is ignored. Because the set
+        of `data.<key>` names is open-ended it cannot be enumerated here.
+
+        **Pagination.** Offset-based, there is no cursor. Request the next page
+        with `offset = offset + limit`; you are done when `offset + items.length`
+        reaches `count` or a page comes back with fewer than `limit` items.
+
+        Requires scope `patients.read`.
+
+        Publishes: `audit.event` (`patient.list`).
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: list
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: limit
+          in: query
+          required: false
+          description: |
+            Page size. Defaults to 50. Values above 500 are silently clamped to
+            500 rather than rejected.
+          schema:
+            type: integer
+            format: int32
+            default: 50
+          example: 25
+        - name: offset
+          in: query
+          required: false
+          description: Number of rows to skip, applied after ordering by `id` ascending.
+          schema:
+            type: integer
+            format: int32
+            default: 0
+          example: 0
+        - name: status
+          in: query
+          required: false
+          description: Exact match on the envelope `status` column (not on `data`).
+          schema:
+            type: string
+          example: active
+      responses:
+        '200':
+          description: A page of patients.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientPage'
+        '400':
+          $ref: '#/components/responses/BadRequestPaging'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    post:
+      operationId: createPatient
+      summary: Create a patient
+      description: |
+        Creates a patient. `first_name`, `last_name` and `dob` are required. The
+        keys `mrn` and `identity_sub` go to their own (unique) columns; every
+        other key is stored verbatim as the record's `data` document.
+
+        Before insert, the service calls `demographics-service` to validate the
+        address (when `address` is present) and to filter profanity out of the
+        names; after insert it sends a welcome notification through
+        `notifications-service`. All three calls are best-effort and never fail
+        the create (see the API description).
+
+        Sending an `mrn` or `identity_sub` that already exists violates a unique
+        constraint and fails with `500`: the service does not translate it.
+
+        Requires scope `patients.write`.
+
+        Publishes: `patient.created`, `audit.event` (`patient.create`).
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: create
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        description: |
+          A missing or unparseable body is treated as `{}` and fails with `400`
+          because the required fields are absent.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreateRequest'
+      responses:
+        '201':
+          description: The created patient.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '400':
+          $ref: '#/components/responses/BadRequestMissingFields'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/patients/search:
+    get:
+      operationId: searchPatients
+      summary: Search patients
+      description: |
+        Case-insensitive substring search over `mrn`, `first_name`, `last_name`,
+        `email` and `phone`. Returns at most 100 hits, unordered and unpaged;
+        `count` is the number of returned items.
+
+        An empty or missing `q` is not an error: it returns `count: 0` and no
+        items.
+
+        Requires scope `patients.read`.
+
+        Publishes: `audit.event` (`patient.search`), except when `q` is empty.
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: search
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: q
+          in: query
+          required: false
+          description: Search term, trimmed before use.
+          schema:
+            type: string
+          example: smith
+      responses:
+        '200':
+          description: The matching patients.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientSearchResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/patients/{patient_id}:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+      - $ref: '#/components/parameters/RequestId'
+
+    get:
+      operationId: getPatient
+      summary: Get a patient
+      description: |
+        Fetches a single patient by id. Deactivated patients are still returned,
+        with `status` set to `inactive`.
+
+        Requires scope `patients.read`.
+
+        Publishes: `audit.event` (`patient.read`).
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: get
+      responses:
+        '200':
+          description: The patient.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    patch:
+      operationId: updatePatient
+      summary: Update a patient
+      description: |
+        Shallow-merges the request body into the record's existing `data`
+        document: keys present in the body overwrite, keys absent are preserved.
+        Nested objects are replaced wholesale, not merged recursively.
+
+        `status` and `mrn` are lifted out of the body and written to their
+        envelope columns (omitted means unchanged). `id` is stripped and
+        ignored. No required-field validation is done on update.
+
+        As on create, `demographics-service` is called best-effort to validate
+        the address (when `address` is present) and to filter the names.
+
+        Requires scope `patients.write`.
+
+        Publishes: `patient.updated`, `audit.event` (`patient.update`).
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: update
+      requestBody:
+        required: false
+        description: Fields to merge. A missing or unparseable body is treated as `{}`.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientUpdateRequest'
+      responses:
+        '200':
+          description: The updated patient.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    put:
+      operationId: replacePatient
+      # Handled by the exact same Flask view as PATCH: it merges, it does not
+      # replace. Documented for completeness, but excluded from SDK generation so
+      # Fern emits one `update` method instead of two identical ones.
+      x-fern-ignore: true
+      summary: Update a patient (PUT alias)
+      description: |
+        Identical to `PATCH /api/patients/{patient_id}`: the same handler is
+        bound to both verbs, so this performs a **shallow merge**, not a
+        replacement, and emits the same `patient.updated` event. Prefer `PATCH`.
+
+        Requires scope `patients.write`.
+      tags: [Patients]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientUpdateRequest'
+      responses:
+        '200':
+          description: The updated patient.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    delete:
+      operationId: deactivatePatient
+      summary: Deactivate a patient
+      description: |
+        Soft delete. Sets `status` to `inactive` and bumps `updated_at`; the row
+        and its `data` document are retained and remain readable via
+        `GET /api/patients/{patient_id}`.
+
+        Safe to repeat: a second call on an already inactive record still returns
+        `200`.
+
+        Requires scope `patients.write`.
+
+        Publishes: `patient.updated`, `audit.event` (`patient.deactivate`).
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: deactivate
+      responses:
+        '200':
+          description: Acknowledgement carrying the deactivated record id.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeactivateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/patients/{patient_id}/summary:
+    get:
+      operationId: getPatientSummary
+      summary: Get a patient summary
+      description: |
+        Returns the patient plus the linked records of three peer services:
+        `appointments` from `appointments-service`, `ehr` from `ehr-service` and
+        `insurance` from `eligibility-service`, each queried by `patient_id`.
+
+        Peers are called one after the other. A peer that is not configured or
+        that fails (down, or HTTP 4xx/5xx) does not fail the request: its section
+        becomes `{"error": "<reason>"}`. Callers must therefore check each
+        section for an `error` key.
+
+        Requires scope `patients.read`.
+
+        Publishes: `audit.event` (`patient.summary`).
+      tags: [Patients]
+      x-fern-sdk-group-name: patients
+      x-fern-sdk-method-name: summary
+      parameters:
+        - $ref: '#/components/parameters/PatientId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The patient and the peer sections.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      description: Always returns `200` if the process is up. Performs no dependency checks.
+      tags: [Health]
+      security: []
+      x-fern-sdk-group-name: health
+      x-fern-sdk-method-name: check
+      responses:
+        '200':
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+                service: patients-service
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ready:
+    get:
+      operationId: getReadiness
+      summary: Readiness probe
+      description: |
+        Checks the Postgres connection with `SELECT 1`. The event bus is not
+        probed, so a green `/ready` does not imply a reachable bus. Returns `503`
+        while a check fails; the caller should retry later.
+      tags: [Health]
+      security: []
+      x-fern-sdk-group-name: health
+      x-fern-sdk-method-name: ready
+      responses:
+        '200':
+          description: All probed dependencies are reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+              example:
+                status: ok
+                service: patients-service
+                problems: []
+        '503':
+          description: At least one dependency check failed. Retryable once the dependency is back.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+              example:
+                status: degraded
+                service: patients-service
+                problems:
+                  - 'db: connection refused'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Obtain the token from `auth-service` (ask your platform team for a client
+        with the `patients.read` and/or `patients.write` scopes); locally, set
+        `AUTH_DISABLED=1` and any bearer value works. HS256 JWT issued by `auth-service`, sent as `Authorization: Bearer <token>`.
+        The token must carry `sub` and `exp` claims and a `scopes` array.
+
+        Required scopes, enforced per operation:
+
+        - `patients.read`: `GET` on the collection, on a single record, `search` and `summary`
+        - `patients.write`: `POST`, `PUT`, `PATCH` and `DELETE`
+
+        A token with `scopes: ["*"]` satisfies any requirement. Scopes are not
+        modelled as OpenAPI scopes because this is an HTTP bearer scheme, not
+        OAuth 2.
+
+        Setting `AUTH_DISABLED=1` on the service bypasses verification entirely
+        and injects a `dev-user` principal. That is a local-development switch.
+
+  parameters:
+    PatientId:
+      name: patient_id
+      in: path
+      required: true
+      description: Primary key of the patient record.
+      schema:
+        type: integer
+        format: int64
+      example: 1001
+
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: |
+        Correlation id propagated across HTTP hops and onto published events.
+        Generated by the service if omitted, and echoed on every response.
+      schema:
+        type: string
+      example: 9f1c2b7a4e8d4c1fa0b3e6d5c4a29187
+
+  headers:
+    XRequestId:
+      description: The correlation id for this request, echoed back.
+      schema:
+        type: string
+
+  responses:
+    BadRequestPaging:
+      description: |
+        `limit` or `offset` is not an integer. The caller must fix the input;
+        retrying the same request fails again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: offset and limit must be integers
+
+    BadRequestMissingFields:
+      description: |
+        One or more of `first_name`, `last_name`, `dob` is missing (this includes
+        an empty or unparseable body). The caller must fix the input; retrying
+        the same request fails again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: 'missing fields: dob'
+
+    Unauthorized:
+      description: |
+        The bearer token is missing, malformed, expired, or fails signature
+        verification. Retry only with a new valid token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            missing:
+              summary: No Authorization header
+              value:
+                error: missing bearer token
+            invalid:
+              summary: Token rejected
+              value:
+                error: invalid token
+
+    Forbidden:
+      description: |
+        The token is valid but lacks the scope this operation requires. Not
+        retryable with the same token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ScopeError'
+          example:
+            error: insufficient scope
+            required:
+              - patients.write
+            have:
+              - patients.read
+
+    NotFound:
+      description: No patient exists with the given id. Not retryable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: patient 999999 not found
+
+    ServerError:
+      description: |
+        Unhandled server error (for example the database is unreachable, or a
+        unique `mrn` or `identity_sub` is violated on create). The body is
+        Flask's default HTML error page, not JSON. Retrying is safe for reads
+        and `DELETE`; for `POST` check first that the record was not created.
+      content:
+        text/html:
+          schema:
+            type: string
+          example: '<!doctype html><title>500 Internal Server Error</title><h1>Internal Server Error</h1>'
+
+  schemas:
+    Patient:
+      type: object
+      description: |
+        A patient record. The envelope fields are always present and
+        server-managed (`mrn` and `identity_sub` may be `null`); everything else
+        is the caller's `data` document, flattened to the top level. Additional
+        properties are therefore expected, not an error.
+      required:
+        - id
+        - mrn
+        - identity_sub
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+          description: Server-assigned primary key.
+        mrn:
+          type:
+            - string
+            - 'null'
+          description: Medical record number. Unique when set.
+          example: MRN-000123
+        identity_sub:
+          type:
+            - string
+            - 'null'
+          description: Subject of the linked `identity-service` user. Unique when set.
+        status:
+          type: string
+          description: |
+            Lifecycle state. `active` by default, `inactive` after `DELETE`. Not a
+            closed enum: any string can be written through `status` on update.
+          default: active
+          example: active
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+        dob:
+          type: string
+          description: Date of birth, stored as sent (conventionally `YYYY-MM-DD`).
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+        address_validated:
+          type: boolean
+          description: Set by the best-effort address validation; absent when it did not run.
+        latitude:
+          type:
+            - number
+            - 'null'
+        longitude:
+          type:
+            - number
+            - 'null'
+      additionalProperties: true
+      example:
+        id: 1001
+        mrn: MRN-000123
+        identity_sub: null
+        status: active
+        created_at: '2026-08-12T09:14:22.481930+00:00'
+        updated_at: '2026-08-12T09:14:22.481930+00:00'
+        first_name: Ada
+        last_name: Lovelace
+        dob: '1990-01-01'
+        email: ada@example.com
+        phone: '+1-555-0100'
+
+    PatientCreateRequest:
+      type: object
+      description: |
+        `first_name`, `last_name` and `dob` are required. `mrn` and `identity_sub`
+        are stored in their own columns; any other key is stored as-is on the
+        record.
+      required:
+        - first_name
+        - last_name
+        - dob
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        dob:
+          type: string
+          description: Date of birth, conventionally `YYYY-MM-DD`.
+        mrn:
+          type: string
+          description: Medical record number. Must be unique.
+        identity_sub:
+          type: string
+          description: Subject of the linked `identity-service` user. Must be unique.
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+          description: When present, triggers the best-effort address validation.
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+      additionalProperties: true
+      example:
+        first_name: Ada
+        last_name: Lovelace
+        dob: '1990-01-01'
+        mrn: MRN-000123
+        email: ada@example.com
+        phone: '+1-555-0100'
+
+    PatientUpdateRequest:
+      type: object
+      description: |
+        Fields to shallow-merge into the record's `data`. `status` and `mrn` are
+        special-cased onto the envelope columns; `id` is discarded.
+      properties:
+        status:
+          type: string
+          description: New envelope status. Omit to leave unchanged.
+          example: active
+        mrn:
+          type: string
+          description: New medical record number. Omit to leave unchanged.
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+          description: When present, triggers the best-effort address validation.
+      additionalProperties: true
+      example:
+        phone: '+1-555-0199'
+        city: Boston
+
+    PatientPage:
+      type: object
+      required:
+        - count
+        - items
+      properties:
+        count:
+          type: integer
+          format: int64
+          description: |
+            Total rows matching the filter, ignoring `limit` and `offset`: use it
+            to drive pagination, not `items.length`.
+        items:
+          type: array
+          description: The requested page, ordered by `id` ascending.
+          items:
+            $ref: '#/components/schemas/Patient'
+      additionalProperties: false
+      example:
+        count: 1
+        items:
+          - id: 1001
+            mrn: MRN-000123
+            identity_sub: null
+            status: active
+            created_at: '2026-08-12T09:14:22.481930+00:00'
+            updated_at: '2026-08-12T09:14:22.481930+00:00'
+            first_name: Ada
+            last_name: Lovelace
+            dob: '1990-01-01'
+
+    PatientSearchResult:
+      type: object
+      required:
+        - count
+        - items
+      properties:
+        count:
+          type: integer
+          format: int64
+          description: Number of items returned (at most 100).
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Patient'
+      additionalProperties: false
+      example:
+        count: 1
+        items:
+          - id: 1001
+            mrn: MRN-000123
+            identity_sub: null
+            status: active
+            created_at: '2026-08-12T09:14:22.481930+00:00'
+            updated_at: '2026-08-12T09:14:22.481930+00:00'
+            first_name: Ada
+            last_name: Lovelace
+            dob: '1990-01-01'
+
+    PeerSection:
+      type: object
+      description: |
+        What a peer service returned, passed through as-is, or `{"error": "..."}`
+        when the peer is not configured or failed.
+      additionalProperties: true
+      example:
+        error: peer not configured
+
+    PatientSummary:
+      type: object
+      required:
+        - patient
+        - appointments
+        - ehr
+        - insurance
+      properties:
+        patient:
+          $ref: '#/components/schemas/Patient'
+        appointments:
+          $ref: '#/components/schemas/PeerSection'
+        ehr:
+          $ref: '#/components/schemas/PeerSection'
+        insurance:
+          $ref: '#/components/schemas/PeerSection'
+      additionalProperties: false
+      example:
+        patient:
+          id: 1001
+          mrn: MRN-000123
+          identity_sub: null
+          status: active
+          created_at: '2026-08-12T09:14:22.481930+00:00'
+          updated_at: '2026-08-12T09:14:22.481930+00:00'
+          first_name: Ada
+          last_name: Lovelace
+          dob: '1990-01-01'
+        appointments:
+          count: 0
+          items: []
+        ehr:
+          error: peer not configured
+        insurance:
+          error: 'HTTP 503: upstream unavailable'
+
+    DeactivateResponse:
+      type: object
+      required:
+        - deactivated
+      properties:
+        deactivated:
+          type: integer
+          format: int64
+          description: Id of the record that was set to `inactive`.
+      additionalProperties: false
+      example:
+        deactivated: 1001
+
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          const: ok
+        service:
+          type: string
+          example: patients-service
+      additionalProperties: false
+
+    ReadinessStatus:
+      type: object
+      required:
+        - status
+        - service
+        - problems
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+          example: patients-service
+        problems:
+          type: array
+          description: One entry per failed dependency check. Empty when `status` is `ok`.
+          items:
+            type: string
+      additionalProperties: false
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable failure message.
+      additionalProperties: false
+
+    ScopeError:
+      type: object
+      description: Returned on `403`, carries the scope gap alongside the message.
+      required:
+        - error
+        - required
+        - have
+      properties:
+        error:
+          type: string
+          const: insufficient scope
+        required:
+          type: array
+          description: Scopes the operation demands.
+          items:
+            type: string
+        have:
+          type: array
+          description: Scopes present on the presented token, sorted.
+          items:
+            type: string
+      additionalProperties: false

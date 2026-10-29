@@ -1,0 +1,49 @@
+$kind: collection
+description: |
+  HTTP API for `patients-service` (domain: **patients**, port **8100**).
+
+  Every clinical, billing and communications flow starts by resolving a patient
+  here. Records are stored as a fixed envelope (`id`, `mrn`, `identity_sub`,
+  `status`, `created_at`, `updated_at`) around a free-form JSONB `data`
+  document. Responses flatten the two: envelope fields sit alongside the
+  caller-supplied `data` keys at the top level of the object. That is why
+  `Patient` allows additional properties.
+
+  ### Side effects
+  Every mutating endpoint publishes a domain event (`patient.created` on
+  create, `patient.updated` on update and deactivate), and *every* endpoint
+  under `/api/patients/` (reads included) publishes an `audit.event`. The
+  events are listed per operation below.
+
+  ### Best-effort peer calls
+  None of the peer calls below can fail a request: when the peer is down or
+  answers with an error, the call is skipped and the write goes through.
+
+  | Operation                 | Peer service             | What it does                                                                  |
+  |---------------------------|--------------------------|-------------------------------------------------------------------------------|
+  | create, update (`address`)| `demographics-service`   | Validates the address and adds `address_validated`, `latitude`, `longitude`.  |
+  | create, update            | `demographics-service`   | Filters profanity out of `first_name` and `last_name`.                        |
+  | create                    | `notifications-service`  | Sends a welcome notification.                                                 |
+
+  ### Summary fan-out
+  `GET /api/patients/{patient_id}/summary` reads `appointments-service`,
+  `ehr-service` and `eligibility-service`. Each peer section degrades to
+  `{"error": "..."}` instead of failing the request.
+
+  ### Soft delete
+  `DELETE` never removes a row: it sets `status` to `inactive`.
+
+  ### Consumers
+  Many services declare `patients-service` as an HTTP dependency (appointments,
+  ehr, billing, encounters, patient-portal-api, patient-search, and others).
+  Removing or renaming a field, a path or a response breaks them.
+variables:
+  baseUrl: http://localhost:8100
+  bearerToken: ''
+  patient_id: '1001'
+auth:
+- id: 5b1c6f0e-8a52-4d0e-9b3c-2f7a1d4e6c11
+  type: bearer
+  name: bearer auth
+  credentials:
+    token: '{{bearerToken}}'

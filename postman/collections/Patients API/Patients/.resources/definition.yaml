@@ -1,0 +1,3 @@
+$kind: collection
+description: CRUD, search and summary over patient records.
+order: 1000

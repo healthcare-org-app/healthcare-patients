@@ -1,0 +1,21 @@
+$kind: http-example
+name: Unhandled server error (for example the database is unreachable, or a unique `mrn` or `...
+request:
+  url: '{{baseUrl}}/ready'
+  method: GET
+  headers:
+  - key: Accept
+    value: application/json
+  body:
+    type: text
+    content: ''
+response:
+  statusCode: 500
+  statusText: Internal Server Error
+  headers:
+  - key: Content-Type
+    value: text/html
+  body:
+    type: text
+    content: <!doctype html><title>500 Internal Server Error</title><h1>Internal Server Error</h1>
+order: 3000

@@ -1,0 +1,21 @@
+# Config of the platform API quality gate: https://github.com/healthcare-org-app/healthcare-api-quality-gate
+# The spec and the collection come from .postman/resources.yaml. Everything not set here uses the gate's defaults.
+
+# Name of this API in the Postman Context Graph (to find its consumers).
+impact:
+  api: patients-service
+
+# Pass at B or better, and block whatever the score on a lint failure,
+# failing contract tests or a breaking change with a known consumer.
+pass_rating: B
+
+blockers:
+  contract-lint: on_fail
+  contract-tests: on_fail
+  impact: on_breaking
+
+contract-lint:
+  exceptions:
+    - path: "paths./api/patients/"
+      issue: "trailing slash"
+      reason: "Real route of patients-service: the Flask blueprint declares /api/patients/ and 36 services in the org call it. Removing the slash is a coordinated migration with those consumers, not a spec edit."

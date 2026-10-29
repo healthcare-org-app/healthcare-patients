@@ -1,0 +1,24 @@
+$kind: http-request
+description: |
+  Checks the Postgres connection with `SELECT 1`. The event bus is not
+  probed, so a green `/ready` does not imply a reachable bus. Returns `503`
+  while a check fails; the caller should retry later.
+url: '{{baseUrl}}/ready'
+method: GET
+headers:
+- key: Accept
+  value: application/json
+settings: {}
+examples: ./.resources/Readiness probe.resources/examples
+order: 2000
+scripts:
+- type: afterResponse
+  code: |
+    function checkPatient(p) {
+      // Envelope fields are the contract consumers rely on; extra keys are expected.
+      pm.expect(p).to.include.all.keys("id", "mrn", "identity_sub", "status", "created_at", "updated_at");
+      pm.expect(p.id).to.be.a("number");
+      pm.expect(p.status).to.be.a("string");
+    }
+    pm.test("200 on probe", () => { pm.response.to.have.status(200); const b = pm.response.json(); pm.expect(b).to.include.all.keys("status", "service", "problems"); pm.expect(b.problems).to.be.an("array"); });
+  language: text/javascript

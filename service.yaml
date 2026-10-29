@@ -11,6 +11,9 @@ http_deps:
   - audit-log-service
   - notifications-service
   - demographics-service
+  - appointments-service
+  - ehr-service
+  - eligibility-service
 
 publishes:
   - patient.created

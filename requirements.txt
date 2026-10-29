@@ -4,8 +4,6 @@ psycopg[binary,pool]>=3.1.18
 requests>=2.31.0
 PyJWT>=2.8.0
 pyyaml>=6.0.1
-# Local dependency: install with `pip install -e ../../libs/py-healthcare-common`
 
-# Shared runtime library (installed from GitHub for Render/prod builds;
-# in local docker-compose dev this is superseded by the bind-mount).
-healthcare-common @ git+https://github.com/healthcare-org-app/healthcare-common.git@main
+# Shared runtime library (installed from GitHub, pinned to a commit).
+py-healthcare-common @ git+https://github.com/healthcare-org-app/healthcare-common.git@4a62d993695f6cc62f3abd701d1fa1694d14cfbe

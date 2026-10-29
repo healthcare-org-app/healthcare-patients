@@ -1,0 +1,28 @@
+$kind: http-example
+name: At least one dependency check failed. Retryable once the dependency is back.
+request:
+  url: '{{baseUrl}}/ready'
+  method: GET
+  headers:
+  - key: Accept
+    value: application/json
+  body:
+    type: text
+    content: ''
+response:
+  statusCode: 503
+  statusText: Service Unavailable
+  headers:
+  - key: Content-Type
+    value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "status": "degraded",
+        "service": "patients-service",
+        "problems": [
+          "db: connection refused"
+        ]
+      }
+order: 2000
