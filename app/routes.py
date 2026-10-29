@@ -37,7 +37,8 @@ def build_blueprint(svc) -> Blueprint:
     def _row_to_json(row: dict) -> dict:
         return {
             "id": row["id"],
-            "mrn": row["mrn"],
+            "mrn": row["mrn"],  # deprecated alias of medical_record_number
+            "medical_record_number": row["mrn"],
             "identity_sub": row["identity_sub"],
             "status": row["status"],
             "created_at": row["created_at"].isoformat(),
@@ -139,7 +140,8 @@ def build_blueprint(svc) -> Blueprint:
 
         _validate_address(payload)
         _filter_text(payload)
-        mrn = payload.pop("mrn", None)
+        legacy_mrn = payload.pop("mrn", None)
+        mrn = payload.pop("medical_record_number", legacy_mrn)
         identity_sub = payload.pop("identity_sub", None)
         row = db.query_one(
             "INSERT INTO patients (mrn, identity_sub, data) VALUES (%s, %s, %s) RETURNING *",
@@ -194,7 +196,8 @@ def build_blueprint(svc) -> Blueprint:
         _validate_address(payload)
         _filter_text(payload)
         new_status = payload.pop("status", existing["status"])
-        new_mrn = payload.pop("mrn", existing["mrn"])
+        legacy_mrn = payload.pop("mrn", existing["mrn"])
+        new_mrn = payload.pop("medical_record_number", legacy_mrn)
         merged = {**(existing["data"] or {}), **payload}
 
         row = db.query_one(

@@ -18,7 +18,7 @@ flow starts by resolving a patient here.
 | GET       | `/api/patients/<id>`                | read                                     |
 | PUT/PATCH | `/api/patients/<id>`                | update                                   |
 | DELETE    | `/api/patients/<id>`                | soft-delete (`status=inactive`)          |
-| GET       | `/api/patients/search?q=<term>`     | fuzzy search across name/mrn/email/phone |
+| GET       | `/api/patients/search?q=<term>`     | fuzzy search across name/medical_record_number/email/phone |
 | GET       | `/api/patients/<id>/summary`        | aggregate linked records (via peers)     |
 | GET       | `/health`, `/ready`                 | ops                                      |
 

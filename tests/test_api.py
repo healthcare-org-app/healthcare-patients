@@ -150,3 +150,25 @@ def test_search(client):
 def test_search_empty_q(client):
     r = client.get("/api/patients/search?q=")
     assert r.get_json() == {"count": 0, "items": []}
+
+
+def test_mrn_returned_under_both_names(client):
+    r = client.post("/api/patients/", json={
+        "first_name": "Mrn", "last_name": "New", "dob": "1990-01-01",
+        "medical_record_number": "MRN-777",
+    })
+    assert r.status_code == 201, r.data
+    body = r.get_json()
+    assert body["medical_record_number"] == "MRN-777"
+    assert body["mrn"] == "MRN-777"  # deprecated alias
+
+
+def test_legacy_mrn_still_accepted(client):
+    r = client.post("/api/patients/", json={
+        "first_name": "Mrn", "last_name": "Old", "dob": "1990-01-01",
+        "mrn": "MRN-888",
+    })
+    body = r.get_json()
+    assert body["medical_record_number"] == "MRN-888"
+    r2 = client.patch(f"/api/patients/{body['id']}", json={"medical_record_number": "MRN-889"})
+    assert r2.get_json()["mrn"] == "MRN-889"

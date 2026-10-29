@@ -47,7 +47,7 @@ scripts:
   code: |
     function checkPatient(p) {
       // Envelope fields are the contract consumers rely on; extra keys are expected.
-      pm.expect(p).to.include.all.keys("id", "mrn", "identity_sub", "status", "created_at", "updated_at");
+      pm.expect(p).to.include.all.keys("id", "mrn", "medical_record_number", "identity_sub", "status", "created_at", "updated_at");
       pm.expect(p.id).to.be.a("number");
       pm.expect(p.status).to.be.a("string");
     }
