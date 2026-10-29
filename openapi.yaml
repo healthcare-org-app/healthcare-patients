@@ -823,7 +823,7 @@ components:
         items:
           - id: 1001
             medical_record_number: MRN-000123
-        mrn: MRN-000123
+            mrn: MRN-000123
             identity_sub: null
             status: active
             created_at: '2026-08-12T09:14:22.481930+00:00'
@@ -852,7 +852,7 @@ components:
         items:
           - id: 1001
             medical_record_number: MRN-000123
-        mrn: MRN-000123
+            mrn: MRN-000123
             identity_sub: null
             status: active
             created_at: '2026-08-12T09:14:22.481930+00:00'
@@ -891,7 +891,7 @@ components:
         patient:
           id: 1001
           medical_record_number: MRN-000123
-        mrn: MRN-000123
+          mrn: MRN-000123
           identity_sub: null
           status: active
           created_at: '2026-08-12T09:14:22.481930+00:00'
