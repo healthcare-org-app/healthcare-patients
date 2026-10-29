@@ -1,7 +1,7 @@
 $kind: http-request
 description: |
   Creates a patient. `first_name`, `last_name` and `dob` are required. The
-  keys `mrn` and `identity_sub` go to their own (unique) columns; every
+  keys `medical_record_number` (or the deprecated `mrn`) and `identity_sub` go to their own (unique) columns; every
   other key is stored verbatim as the record's `data` document.
 
   Before insert, the service calls `demographics-service` to validate the
@@ -36,7 +36,7 @@ body:
       "first_name": "Ada",
       "last_name": "Lovelace",
       "dob": "1990-01-01",
-      "mrn": "MRN-000123",
+      "medical_record_number": "MRN-000123",
       "email": "ada@example.com",
       "phone": "+1-555-0100"
     }
@@ -48,7 +48,9 @@ scripts:
   code: |
     function checkPatient(p) {
       // Envelope fields are the contract consumers rely on; extra keys are expected.
-      pm.expect(p).to.include.all.keys("id", "mrn", "identity_sub", "status", "created_at", "updated_at");
+      pm.expect(p).to.include.all.keys("id", "mrn", "medical_record_number", "identity_sub", "status", "created_at", "updated_at");
+      // `mrn` is the deprecated alias of `medical_record_number`: same value.
+      pm.expect(p.mrn).to.eql(p.medical_record_number);
       pm.expect(p.id).to.be.a("number");
       pm.expect(p.status).to.be.a("string");
     }

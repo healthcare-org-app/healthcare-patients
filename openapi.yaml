@@ -8,7 +8,7 @@ info:
     HTTP API for `patients-service` (domain: **patients**, port **8100**).
 
     Every clinical, billing and communications flow starts by resolving a patient
-    here. Records are stored as a fixed envelope (`id`, `mrn`, `identity_sub`,
+    here. Records are stored as a fixed envelope (`id`, `medical_record_number`, `identity_sub`,
     `status`, `created_at`, `updated_at`) around a free-form JSONB `data`
     document. Responses flatten the two: envelope fields sit alongside the
     caller-supplied `data` keys at the top level of the object. That is why
@@ -141,7 +141,7 @@ paths:
       summary: Create a patient
       description: |
         Creates a patient. `first_name`, `last_name` and `dob` are required. The
-        keys `mrn` and `identity_sub` go to their own (unique) columns; every
+        keys `medical_record_number` (or the deprecated `mrn`) and `identity_sub` go to their own (unique) columns; every
         other key is stored verbatim as the record's `data` document.
 
         Before insert, the service calls `demographics-service` to validate the
@@ -194,7 +194,7 @@ paths:
       operationId: searchPatients
       summary: Search patients
       description: |
-        Case-insensitive substring search over `mrn`, `first_name`, `last_name`,
+        Case-insensitive substring search over `medical_record_number`, `first_name`, `last_name`,
         `email` and `phone`. Returns at most 100 hits, unordered and unpaged;
         `count` is the number of returned items.
 
@@ -278,7 +278,7 @@ paths:
         document: keys present in the body overwrite, keys absent are preserved.
         Nested objects are replaced wholesale, not merged recursively.
 
-        `status` and `mrn` are lifted out of the body and written to their
+        `status` and `medical_record_number` (or the deprecated `mrn`) are lifted out of the body and written to their
         envelope columns (omitted means unchanged). `id` is stripped and
         ignored. No required-field validation is done on update.
 
@@ -625,11 +625,14 @@ components:
       type: object
       description: |
         A patient record. The envelope fields are always present and
-        server-managed (`mrn` and `identity_sub` may be `null`); everything else
-        is the caller's `data` document, flattened to the top level. Additional
-        properties are therefore expected, not an error.
+        server-managed (`medical_record_number`, `mrn` and `identity_sub` may be
+        `null`); everything else is the caller's `data` document, flattened to
+        the top level. Additional properties are therefore expected, not an
+        error. `mrn` is deprecated: it is still returned, with the same value as
+        `medical_record_number`.
       required:
         - id
+        - mrn
         - medical_record_number
         - identity_sub
         - status
@@ -645,7 +648,16 @@ components:
           type:
             - string
             - 'null'
-          description: Medical record number. Unique when set.
+          description: |
+            Medical record number. Unique when set. Replaces the deprecated `mrn`
+            and always carries the same value.
+          example: MRN-000123
+        mrn:
+          deprecated: true
+          type:
+            - string
+            - 'null'
+          description: Deprecated, use `medical_record_number`. Same value, kept for existing consumers.
           example: MRN-000123
         identity_sub:
           type:
@@ -701,6 +713,7 @@ components:
       example:
         id: 1001
         medical_record_number: MRN-000123
+        mrn: MRN-000123
         identity_sub: null
         status: active
         created_at: '2026-08-12T09:14:22.481930+00:00'
@@ -714,9 +727,10 @@ components:
     PatientCreateRequest:
       type: object
       description: |
-        `first_name`, `last_name` and `dob` are required. `mrn` and `identity_sub`
-        are stored in their own columns; any other key is stored as-is on the
-        record.
+        `first_name`, `last_name` and `dob` are required. `medical_record_number`
+        (or the deprecated `mrn`) and `identity_sub` are stored in their own
+        columns; any other key is stored as-is on the record. If both are sent,
+        `medical_record_number` wins.
       required:
         - first_name
         - last_name
@@ -729,9 +743,13 @@ components:
         dob:
           type: string
           description: Date of birth, conventionally `YYYY-MM-DD`.
-        mrn:
+        medical_record_number:
           type: string
-          description: Medical record number. Must be unique.
+          description: Medical record number. Must be unique. Replaces the deprecated `mrn`.
+        mrn:
+          deprecated: true
+          type: string
+          description: Deprecated, use `medical_record_number`. Still accepted; ignored when `medical_record_number` is also sent.
         identity_sub:
           type: string
           description: Subject of the linked `identity-service` user. Must be unique.
@@ -753,23 +771,28 @@ components:
         first_name: Ada
         last_name: Lovelace
         dob: '1990-01-01'
-        mrn: MRN-000123
+        medical_record_number: MRN-000123
         email: ada@example.com
         phone: '+1-555-0100'
 
     PatientUpdateRequest:
       type: object
       description: |
-        Fields to shallow-merge into the record's `data`. `status` and `mrn` are
-        special-cased onto the envelope columns; `id` is discarded.
+        Fields to shallow-merge into the record's `data`. `status` and
+        `medical_record_number` (or the deprecated `mrn`) are special-cased onto
+        the envelope columns; `id` is discarded.
       properties:
         status:
           type: string
           description: New envelope status. Omit to leave unchanged.
           example: active
-        mrn:
+        medical_record_number:
           type: string
-          description: New medical record number. Omit to leave unchanged.
+          description: New medical record number. Omit to leave unchanged. Replaces the deprecated `mrn`.
+        mrn:
+          deprecated: true
+          type: string
+          description: Deprecated, use `medical_record_number`. Ignored when `medical_record_number` is also sent.
         email:
           type: string
         phone:
@@ -804,6 +827,7 @@ components:
         count: 1
         items:
           - id: 1001
+            medical_record_number: MRN-000123
             mrn: MRN-000123
             identity_sub: null
             status: active
@@ -832,6 +856,7 @@ components:
         count: 1
         items:
           - id: 1001
+            medical_record_number: MRN-000123
             mrn: MRN-000123
             identity_sub: null
             status: active
@@ -870,6 +895,7 @@ components:
       example:
         patient:
           id: 1001
+          medical_record_number: MRN-000123
           mrn: MRN-000123
           identity_sub: null
           status: active
