@@ -625,11 +625,14 @@ components:
       type: object
       description: |
         A patient record. The envelope fields are always present and
-        server-managed (`medical_record_number` and `identity_sub` may be `null`); everything else
-        is the caller's `data` document, flattened to the top level. Additional
-        properties are therefore expected, not an error.
+        server-managed (`medical_record_number`, `mrn` and `identity_sub` may be
+        `null`); everything else is the caller's `data` document, flattened to
+        the top level. Additional properties are therefore expected, not an
+        error. `mrn` is deprecated: it is still returned, with the same value as
+        `medical_record_number`.
       required:
         - id
+        - mrn
         - medical_record_number
         - identity_sub
         - status
@@ -645,7 +648,16 @@ components:
           type:
             - string
             - 'null'
-          description: Medical record number. Unique when set.
+          description: |
+            Medical record number. Unique when set. Replaces the deprecated `mrn`
+            and always carries the same value.
+          example: MRN-000123
+        mrn:
+          deprecated: true
+          type:
+            - string
+            - 'null'
+          description: Deprecated, use `medical_record_number`. Same value.
           example: MRN-000123
         identity_sub:
           type:
@@ -701,6 +713,7 @@ components:
       example:
         id: 1001
         medical_record_number: MRN-000123
+        mrn: MRN-000123
         identity_sub: null
         status: active
         created_at: '2026-08-12T09:14:22.481930+00:00'
@@ -805,6 +818,7 @@ components:
         items:
           - id: 1001
             medical_record_number: MRN-000123
+            mrn: MRN-000123
             identity_sub: null
             status: active
             created_at: '2026-08-12T09:14:22.481930+00:00'
@@ -833,6 +847,7 @@ components:
         items:
           - id: 1001
             medical_record_number: MRN-000123
+            mrn: MRN-000123
             identity_sub: null
             status: active
             created_at: '2026-08-12T09:14:22.481930+00:00'
@@ -871,6 +886,7 @@ components:
         patient:
           id: 1001
           medical_record_number: MRN-000123
+          mrn: MRN-000123
           identity_sub: null
           status: active
           created_at: '2026-08-12T09:14:22.481930+00:00'

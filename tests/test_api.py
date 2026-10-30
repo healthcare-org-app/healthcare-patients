@@ -107,6 +107,20 @@ def test_create_then_read(client, svc):
     assert r2.get_json()["email"] == "t@example.com"
 
 
+def test_medical_record_number_mirrors_deprecated_mrn(client):
+    r = client.post("/api/patients/", json={
+        "first_name": "Ada", "last_name": "Lovelace", "dob": "1990-01-01",
+        "mrn": "MRN-000123",
+    })
+    assert r.status_code == 201, r.data
+    created = r.get_json()
+    assert created["medical_record_number"] == "MRN-000123"
+    assert created["mrn"] == created["medical_record_number"]
+
+    got = client.get(f"/api/patients/{created['id']}").get_json()
+    assert got["medical_record_number"] == got["mrn"] == "MRN-000123"
+
+
 def test_create_missing_fields(client):
     r = client.post("/api/patients/", json={"first_name": "Only"})
     assert r.status_code == 400
