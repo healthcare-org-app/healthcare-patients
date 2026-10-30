@@ -630,6 +630,7 @@ components:
         properties are therefore expected, not an error.
       required:
         - id
+        - mrn
         - medical_record_number
         - identity_sub
         - status
@@ -641,6 +642,13 @@ components:
           format: int64
           readOnly: true
           description: Server-assigned primary key.
+        mrn:
+          type:
+            - string
+            - 'null'
+          deprecated: true
+          description: Deprecated alias of `medical_record_number`, kept so existing consumers keep working. Always equal to it.
+          example: MRN-000123
         medical_record_number:
           type:
             - string
@@ -700,6 +708,7 @@ components:
       additionalProperties: true
       example:
         id: 1001
+        mrn: MRN-000123
         medical_record_number: MRN-000123
         identity_sub: null
         status: active
@@ -804,6 +813,7 @@ components:
         count: 1
         items:
           - id: 1001
+            mrn: MRN-000123
             medical_record_number: MRN-000123
             identity_sub: null
             status: active
@@ -832,6 +842,7 @@ components:
         count: 1
         items:
           - id: 1001
+            mrn: MRN-000123
             medical_record_number: MRN-000123
             identity_sub: null
             status: active
@@ -870,6 +881,7 @@ components:
       example:
         patient:
           id: 1001
+          mrn: MRN-000123
           medical_record_number: MRN-000123
           identity_sub: null
           status: active

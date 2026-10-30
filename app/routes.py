@@ -37,7 +37,8 @@ def build_blueprint(svc) -> Blueprint:
     def _row_to_json(row: dict) -> dict:
         return {
             "id": row["id"],
-            "mrn": row["mrn"],
+            "mrn": row["mrn"],  # deprecated alias of medical_record_number
+            "medical_record_number": row["mrn"],
             "identity_sub": row["identity_sub"],
             "status": row["status"],
             "created_at": row["created_at"].isoformat(),
